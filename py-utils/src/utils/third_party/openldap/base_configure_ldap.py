@@ -23,20 +23,9 @@ import glob
 from shutil import copyfile
 
 class BaseConfig:
-    def performBaseConfig(rootPassword,defaultPassword,forceCleanup):
-        defaultpasswd=False
-        forceclean=False
-        ROOTDNPASSWORD=None
 
-        ROOTDNPASSWORD = rootPassword
-        if defaultPassword != None :
-            defaultpasswd = defaultPassword
-        if forceCleanup != None :
-            forceclean = forceCleanup
-
-        INSTALLDIR="/opt/seagate/cortx/s3/install/ldap"
-        #cleanup
-        # Removing schemas
+    def cleanUp():
+	    # Removing schemas
         userSchemaFile = '/etc/openldap/slapd.d/cn=config/cn=schema/cn={1}s3user.ldif'
         try:
             os.remove(userSchemaFile)
@@ -45,10 +34,10 @@ class BaseConfig:
 
         fileList = glob.glob('/etc/openldap/slapd.d/cn=config/cn=schema/*ppolicy.ldif')
         for policyFile in fileList:
-        try:
-            os.remove(policyFile)
-        except:
-            print('Error while deleting '+ policyFile)
+            try:
+                os.remove(policyFile)
+            except:
+                print('Error while deleting '+ policyFile)
         module0File = '/etc/openldap/slapd.d/cn=config/cn=module{0}.ldif'
         try:
             os.remove(module0File)
@@ -68,10 +57,10 @@ class BaseConfig:
         try:
             files = glob.glob('/etc/openldap/slapd.d/cn=config/olcDatabase={2}mdb/*')
             for f in files:
-            try:
-                os.remove(f)
-            except:
-                print('Error while deleting '+ f)
+                try:
+                    os.remove(f)
+                except:
+                    print('Error while deleting '+ f)
         except:
             print('Error while deleting '+ mdbDirectory)
         mdbFile = '/etc/openldap/slapd.d/cn=config/olcDatabase={2}mdb.ldif'
@@ -83,10 +72,24 @@ class BaseConfig:
         if forceclean == 'True' :
             files = glob.glob('/var/lib/ldap/*')
             for f in files:
-            try:
-                os.remove(f)
-            except:
-                print('Error while deleting '+ f)
+                try:
+                    os.remove(f)
+                except:
+                    print('Error while deleting '+ f)
+	
+    def performBaseConfig(rootPassword,defaultPassword,forceCleanup):
+        defaultpasswd=False
+        forceclean=False
+        ROOTDNPASSWORD=None
+
+        ROOTDNPASSWORD = rootPassword
+        if defaultPassword != None :
+            defaultpasswd = defaultPassword
+        if forceCleanup != None :
+            forceclean = forceCleanup
+
+        INSTALLDIR="/opt/seagate/cortx/s3/install/ldap"
+        cleanUp()
 
         copyfile(INSTALLDIR+'/olcDatabase={2}mdb.ldif' , '/etc/openldap/slapd.d/cn=config/olcDatabase={2}mdb.ldif')
 
@@ -198,5 +201,46 @@ class BaseConfig:
             l.add_s(dn, add_record)
         except:
             print('Error while adding dc=seagate,dc=com')
+
+        l.unbind_s()
+
+        #add iam constraint
+        l = ldap.initialize("ldapi:///")
+        l.simple_bind_s("cn=admin,cn=config",ROOTDNPASSWORD)
+        dn="cn=module{0},cn=config"
+        add_record = [
+         ('cn', [b'module{0}'] ),
+         ('olcModulePath', [b'/usr/lib64/openldap/'] ),
+         ('olcModuleLoad', [b'unique.la'] ),
+         ('objectClass', [b'olcModuleList'])
+        ]
+        try:
+            l.add_s(dn, add_record)
+        except:
+            print('Error while adding IAM constraint cn=module{0},cn=config')
+
+        dn="olcOverlay=unique,olcDatabase={2}mdb,cn=config"
+        add_record = [
+         ('olcUniqueUri', [b'ldap:///?mail?sub?'] ),
+         ('olcOverlay', [b'unique'] ),
+         ('objectClass', [b'olcOverlayConfig',b'olcUniqueConfig'])
+        ]
+        try:
+            l.add_s(dn, add_record)
+        except:
+            print('Error while adding IAM constraint olcOverlay=unique')
+
+        #add ppolicyModule
+        dn="cn=module{1},cn=config"
+        add_record = [
+         ('cn', [b'module{1}'] ),
+         ('olcModulePath', [b'/usr/lib64/openldap/'] ),
+         ('olcModuleLoad', [b'ppolicy.la'] ),
+         ('objectClass', [b'olcModuleList'])
+        ]
+        try:
+            l.add_s(dn, add_record)
+        except:
+            print('Error while adding IAM constraint cn=module{1},cn=config')
 
         l.unbind_s()
